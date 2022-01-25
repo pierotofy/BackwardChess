@@ -69,10 +69,6 @@ const updateSize = () => {
     lastSize.h = h;
 }
 
-const getCurrentUci = () => {
-    return movesStack.map(m => `${m[0]}${m[1]}`).join(" ");
-};
-
 // Chess engine
 const game = new Chess();
 const calcDests = () => {
@@ -143,7 +139,7 @@ const handleBoardClick = (e) => {
 };
 
 const afterPlayerMove = (orig, dest) => {
-    const playerMove = uciToMove(`${orig}${dest}`);
+    const playerMove = `${orig}${dest}`;
     
     const correctMove = moves[movesStack.length - 1];
     if (!correctMove){
@@ -152,10 +148,10 @@ const afterPlayerMove = (orig, dest) => {
     }
     const shapes = [];
 
-    if (playerMove.join("") === correctMove.join("")){
+    if (playerMove === `${correctMove['from']}${correctMove['to']}`){
         shapes.push({
-            orig: playerMove[0],
-            dest: playerMove[1],
+            orig,
+            dest,
             brush: 'green'
         });
 
@@ -167,13 +163,13 @@ const afterPlayerMove = (orig, dest) => {
         }
     }else{
         shapes.push({
-            orig: playerMove[0],
-            dest: playerMove[1],
+            orig,
+            dest,
             brush: 'red'
         });
         shapes.push({
-            orig: correctMove[0],
-            dest: correctMove[1],
+            orig: correctMove['from'],
+            dest: correctMove['to'],
             brush: 'green'
         });
 
@@ -183,7 +179,7 @@ const afterPlayerMove = (orig, dest) => {
     const nextCorrectMove = moves[movesStack.length];
     if (nextCorrectMove){
         shapes.push({
-            orig: nextCorrectMove[0],
+            orig: nextCorrectMove['from'],
             brush: 'green'
         });
     }
@@ -191,10 +187,15 @@ const afterPlayerMove = (orig, dest) => {
     cg.setAutoShapes(shapes);
 };
 
+const getPromotion = () => {
+    const currentMove = moves[game.history().length];
+    return currentMove?.promotion;
+}
+
 const checkPlayerMove = (orig, dest) => {
     touchMoved = true;
-
-    pieceStack.push(checkTakePiece(game.move({from: orig, to: dest})));
+    
+    pieceStack.push(checkMoveResult(game.move({from: orig, to: dest, promotion: getPromotion()})));
     updateCg();
     movesStack.push([orig, dest]);
 
@@ -211,10 +212,20 @@ const chessTypeToCgRole = {
 };
 
 const chessMoveToCgPiece = (move) => {
-    const { captured, color } = move;
+    const { captured, color, promotion } = move;
+
+    let pColor = color === "w" ? "black" : "white";
+    let pRole = chessTypeToCgRole[captured];
+
+    if (promotion){
+        // "Capture" your own color
+        pColor = color === "w" ? "white" : "black";
+        pRole = "pawn";
+    }
+
     return {
-        role: chessTypeToCgRole[captured], 
-        color: color === "w" ? "black" : "white"
+        role: pRole, 
+        color: pColor
     };
 }
 
@@ -238,21 +249,27 @@ const checkUndoCastle = (move) => {
     }
 }
 
-const checkTakePiece = (move) => {
+const checkMoveResult = (move) => {
     if (!move) return;
 
-    const { flags, to } = move;
+    const { flags, to, promotion, color } = move;
     const enPassant = flags.indexOf("e") !== -1;
     const stdCapture = flags.indexOf("c") !== -1;
     const noCapture = flags.indexOf("n") !== -1;
-    
-    if (noCapture) return;
 
-    if (enPassant || stdCapture){
+    if (noCapture && !promotion) return;
+
+    if (enPassant || stdCapture || promotion){
         const p = chessMoveToCgPiece(move);
-
         if (stdCapture) p.position = to;
-        else if (enPassant){
+        else if (promotion){
+            p.position = to;
+            p.promotion = true;
+            cg.setPieces([[p.position, {
+                role: chessTypeToCgRole[promotion],
+                color: color === "w" ? "white" : "black"
+            }]]);
+        }else if (enPassant){
             if (move.color === "w"){
                 p.position = to[0] + parseInt(to[1] - 1)
             }else{
@@ -273,11 +290,19 @@ const playMove = (orig, dest, undo = false) => {
 
         let piece = pieceStack.pop();
         if (piece){
-            cg.newPiece(piece, piece.position);
+            if (piece.promotion){
+                // Undo promotion
+                cg.setPieces([[dest, {
+                    role: "pawn",
+                    color: piece.color
+                }]]);
+            }else{
+                cg.newPiece(piece, piece.position);
+            }
         }
     }else{
-        const move = game.move({from: orig, to: dest});
-        pieceStack.push(checkTakePiece(move));
+        const move = game.move({from: orig, to: dest, promotion: getPromotion()});
+        pieceStack.push(checkMoveResult(move));
         movesStack.push([orig, dest]);
     }
 
@@ -326,8 +351,8 @@ const updateState = () => {
 const playForward = () => {
     if (movesStack.length >= moves.length) return false;
     
-    const [orig, dest] = moves[movesStack.length];
-    playMove(orig, dest);
+    const { from, to } = moves[movesStack.length];
+    playMove(from, to);
     updateState();
 
     return true;
@@ -432,11 +457,8 @@ const loadPgn = (username, cb) => {
 
             const g = new Chess();
             if (!g.load_pgn(pgnGame)) throw new Error(`Invalid PGN: ${pgnGames}`);
-            const uci = [];
+            
             const moves = g.history({verbose: true});
-            for (let m of moves){
-                uci.push([m['from'], m['to']]);
-            }
 
             // Parse color
             window.pgnGame = pgnGame;
@@ -456,7 +478,7 @@ const loadPgn = (username, cb) => {
                 winner = "black";
             }
 
-            cb(uci, color, winner);
+            cb(moves, color, winner);
         });
 };
 
@@ -469,10 +491,12 @@ const startGame = (username) => {
 
         if (color === "black") playForward();
 
+        for (let i = 0; i < 100; i++) playForward();
+
         const nextCorrectMove = moves[movesStack.length];
         if (nextCorrectMove){
             cg.setAutoShapes([{
-                orig: nextCorrectMove[0],
+                orig: nextCorrectMove['from'],
                 brush: 'green'
             }]);
         }
