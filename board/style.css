@@ -70,6 +70,18 @@ html,body{
     color: white;
 }
 
+body.hide-pawns piece.pawn{
+    opacity: 0;
+}
+body.hide-pieces piece.knight,
+body.hide-pieces piece.bishop,
+body.hide-pieces piece.queen,
+body.hide-pieces piece.king,
+body.hide-pieces piece.rook
+{
+    opacity: 0;
+}
+
 @keyframes fadeSlide {
     from {
       opacity: 100%;

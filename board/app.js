@@ -491,7 +491,7 @@ const startGame = (username) => {
 
         if (color === "black") playForward();
 
-        for (let i = 0; i < 100; i++) playForward();
+        // for (let i = 0; i < 100; i++) playForward();
 
         const nextCorrectMove = moves[movesStack.length];
         if (nextCorrectMove){
@@ -503,6 +503,17 @@ const startGame = (username) => {
     });
 };
 
+const togglePawns = () => {
+    // if (document.body.classList.contains("hide-pawns")){
+    //     document.body.classList.remove("hide-pawns");
+    // }else{
+    //     document.body.classList.add("hide-pawns");
+    // }
+    document.body.classList.toggle("hide-pawns");
+};
+const togglePieces = () => {
+    document.body.classList.toggle("hide-pieces");
+};
 
 updateSize();
 window.addEventListener('resize', updateSize);
@@ -511,6 +522,9 @@ setInterval(updateSize, 200);
 document.addEventListener('playForward', manualPlayForward);
 document.addEventListener('playBack', manualPlayBack);
 document.addEventListener('rewind', rewind);
+document.addEventListener('togglePawns', togglePawns);
+document.addEventListener('togglePieces', togglePieces);
+
 window.addEventListener('keydown', (e) => {
     if (e.keyCode === 37){
         manualPlayBack();
