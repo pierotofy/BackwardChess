@@ -7,8 +7,9 @@ function parseQueryParams(){
     return JSON.parse('{"' + decodeURI(search).replace(/"/g, '\\"').replace(/&/g, '","').replace(/=/g,'":"') + '"}');
 }
 
-let { username } = parseQueryParams();
-username = "DrNykterstein";
+let { username, gameId } = parseQueryParams();
+if (!username) username = "DrNykterstein";
+if (!gameId) gameId = 0;
 
 const domBoard = document.getElementById('chessboard');
 const state = {
@@ -18,6 +19,7 @@ const state = {
 
 const pieceStack = [];
 const movesStack = [];
+let score = {};
 
 // Webkit
 let _sendMessage = (key, value) => {
@@ -140,10 +142,11 @@ const handleBoardClick = (e) => {
 
 const afterPlayerMove = (orig, dest) => {
     const playerMove = `${orig}${dest}`;
-    
+    const currentMove = movesStack.length;
+
     const correctMove = moves[movesStack.length - 1];
     if (!correctMove){
-        confettiToss();
+        gameOver();
         return;
     }
     const shapes = [];
@@ -155,11 +158,13 @@ const afterPlayerMove = (orig, dest) => {
             brush: 'green'
         });
 
+        if (score[currentMove] === undefined) score[currentMove] = 1;
+
         // Play opponent's next move
         if (!playForward()){
-            confettiToss();
+            gameOver();
         }else if (moves.length === movesStack.length){
-            confettiToss();
+            gameOver();
         }
     }else{
         shapes.push({
@@ -172,6 +177,8 @@ const afterPlayerMove = (orig, dest) => {
             dest: correctMove['to'],
             brush: 'green'
         });
+
+        score[currentMove] = -1;
 
         playBack();
     }
@@ -402,9 +409,29 @@ const rewind = () => {
     });
 }
 
+const calculateScoreStats = () => {
+    console.log(score);
+    let correct = 0;
+    let wrong = 0;
+    const keys = Object.keys(score);
+    for (let i of keys){
+        if (score[i] === 1) correct++;
+        else if (score[i] === -1) wrong++;
+    }
 
+    let scores = JSON.parse(localStorage.getItem(`scores_${username}`) || "{}");
+    scores[gameId] = {
+        correct,
+        wrong,
+        date: new Date().toISOString()
+    };
 
-const confettiToss = () => {
+    localStorage.setItem(`scores_${username}`, JSON.stringify(scores));
+};
+
+const gameOver = () => {
+    calculateScoreStats();
+
     confetti({
         particleCount: 100,
         spread: 60,
@@ -413,18 +440,21 @@ const confettiToss = () => {
     });
 }
 
-
-const flash = (text) => {
-    const el = document.createElement("div");
-    el.classList.add("flash");
-    el.innerHTML = `<div class="text">${text}</div>`;
-    document.body.append(el);
-    setTimeout(() => {
-        el.remove();
-    }, 2000);
-}
-
-
+const downloadScores = () => {
+    const scores = JSON.parse(localStorage.getItem(`scores_${username}`) || "{}");
+    const header = `Date,GameID,Correct Moves,Wrong Moves,Total Moves,Correct %\n`;
+    const lines = Object.keys(scores).map(k => {
+        const { correct, wrong } = scores[k];
+        const total = correct + wrong;
+        return `${scores[k].date},${k},${correct},${wrong},${total},${(correct / total * 100).toFixed(2)}\n`;
+    });
+    let blob = new Blob([`${header}${lines}`], {type: "text/plain"});
+    let url = window.URL.createObjectURL(blob);
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = `scores_${username}.csv`;
+    a.click();
+};
 
 let touchMoved = false;
 
@@ -452,8 +482,7 @@ const loadPgn = (username, cb) => {
         .then(response => response.text())
         .then((pgn) => {
             const pgnGames = pgn.trim().split("\n\n\n");
-            
-            let pgnGame = pgnGames[7];
+            let pgnGame = pgnGames[gameId];
 
             const g = new Chess();
             if (!g.load_pgn(pgnGame)) throw new Error(`Invalid PGN: ${pgnGames}`);
@@ -486,6 +515,7 @@ const startGame = (username) => {
     loadPgn(username, (loadedMoves, playerColor, winner) => {
         moves = loadedMoves;
         color = playerColor;
+        score = {};
         // console.log("Outcome: " + winner);
         updateCg();
 
@@ -504,11 +534,6 @@ const startGame = (username) => {
 };
 
 const togglePawns = () => {
-    // if (document.body.classList.contains("hide-pawns")){
-    //     document.body.classList.remove("hide-pawns");
-    // }else{
-    //     document.body.classList.add("hide-pawns");
-    // }
     document.body.classList.toggle("hide-pawns");
 };
 const togglePieces = () => {
@@ -524,6 +549,7 @@ document.addEventListener('playBack', manualPlayBack);
 document.addEventListener('rewind', rewind);
 document.addEventListener('togglePawns', togglePawns);
 document.addEventListener('togglePieces', togglePieces);
+document.addEventListener('downloadScores', downloadScores);
 
 window.addEventListener('keydown', (e) => {
     if (e.keyCode === 37){
