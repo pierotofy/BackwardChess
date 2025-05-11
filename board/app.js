@@ -7,8 +7,9 @@ function parseQueryParams(){
     return JSON.parse('{"' + decodeURI(search).replace(/"/g, '\\"').replace(/&/g, '","').replace(/=/g,'":"') + '"}');
 }
 
-let { username, gameId } = parseQueryParams();
-if (!username) username = "DrNykterstein";
+let { username, gameId, color } = parseQueryParams();
+if (!username) username = "Sicilian-Najdorf";
+if (!color) color = "white";
 if (!gameId) gameId = 0;
 
 const domBoard = document.getElementById('chessboard');
@@ -23,7 +24,7 @@ let score = {};
 
 // Webkit
 let _sendMessage = (key, value) => {
-    console.log(key, value);
+    // console.log(key, value);
 };
 
 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.jsHandler){
@@ -76,31 +77,20 @@ const game = new Chess();
 const calcDests = () => {
     const dests = new Map();
     
-    // All legal moves allowed
+    // All moves allowed
     game.SQUARES.forEach(s => {
         const ms = game.moves({square: s, verbose: true});
         if (ms.length) dests.set(s, ms.map(m => m.to));
     });
+    
+    // Previous move allowed
+    if (movesStack.length > 0){
+        const [from, to] = movesStack[movesStack.length - 1];
+        dests.set(to, [from]);
+    }
 
     return dests;
 }
-
-
-const uciToMove = (uci) => {
-    let result = ["", ""];
-    let c = 0;
-
-    for (let i = 0; i < uci.length; ){
-        if (/[a-h]/.test(uci[i])){
-            result[c] += uci[i++];
-            result[c++] += uci[i++];
-        }else{
-            i++; // Promotion character?
-        }
-        if (c > 1) break;
-    }
-    return result;
-};
 
 
 const updateCg = () => {
@@ -110,14 +100,14 @@ const updateCg = () => {
             lastMove: true
         },
 
-        turnColor:  game.turn() === 'w' ? 'white' : 'black',
+        turnColor:  game.turn() === 'w' ? 'black' : 'white',
         
         // this highlights the checked king in red
         check: game.in_check(),
         
         movable: {
             // Only allow moves by whoevers turn it is
-            color: game.turn() === 'w' ? 'white' : 'black',
+            color: game.turn() === 'w' ? 'black' : 'white',
             
             // Only allow legal moves
             dests: calcDests()
@@ -161,37 +151,14 @@ const afterPlayerMove = (orig, dest) => {
         if (score[currentMove] === undefined) score[currentMove] = 1;
 
         // Play opponent's next move
-        if (!playForward()){
+        if (!playBack() || !playBack()){
             gameOver();
-        }else if (moves.length === movesStack.length){
+        }else if (moves.length === 0){
             gameOver();
         }
-    }else{
-        shapes.push({
-            orig,
-            dest,
-            brush: 'red'
-        });
-        shapes.push({
-            orig: correctMove['from'],
-            dest: correctMove['to'],
-            brush: 'green'
-        });
-
-        score[currentMove] = -1;
-
-        playBack();
     }
 
-    const nextCorrectMove = moves[movesStack.length];
-    if (nextCorrectMove){
-        shapes.push({
-            orig: nextCorrectMove['from'],
-            brush: 'green'
-        });
-    }
-
-    cg.setAutoShapes(shapes);
+    updateCg();
 };
 
 const getPromotion = () => {
@@ -202,11 +169,11 @@ const getPromotion = () => {
 const checkPlayerMove = (orig, dest) => {
     touchMoved = true;
     
-    pieceStack.push(checkMoveResult(game.move({from: orig, to: dest, promotion: getPromotion()})));
-    updateCg();
-    movesStack.push([orig, dest]);
+    // pieceStack.push(checkMoveResult(game.move({from: orig, to: dest, promotion: getPromotion()})));
+    // updateCg();
+    // movesStack.push([orig, dest]);
 
-    afterPlayerMove(orig, dest);
+    afterPlayerMove(dest, orig);
 };
 
 const chessTypeToCgRole = {
@@ -381,6 +348,8 @@ const playBack = () => {
     playMove(orig, dest, true);
 
     updateState();
+
+    return true;
 }
 
 const manualPlayBack = () => {
@@ -410,7 +379,6 @@ const rewind = () => {
 }
 
 const calculateScoreStats = () => {
-    console.log(score);
     let correct = 0;
     let wrong = 0;
     const keys = Object.keys(score);
@@ -481,24 +449,16 @@ const loadPgn = (username, cb) => {
     fetch(`/gen/${username}.pgn.txt`)
         .then(response => response.text())
         .then((pgn) => {
-            const pgnGames = pgn.trim().split("\n\n\n");
+            const pgnGames = pgn.trim().split("\n\n[Event");
             let pgnGame = pgnGames[gameId];
+            if (pgnGame.indexOf("[Event") !== 0) pgnGame = "[Event" + pgnGame;
 
             const g = new Chess();
             if (!g.load_pgn(pgnGame)) throw new Error(`Invalid PGN: ${pgnGames}`);
-            
             const moves = g.history({verbose: true});
 
             // Parse color
             window.pgnGame = pgnGame;
-            
-            let color = "white"; 
-            for (let line of pgnGame.split("\n")){
-                if (line.toLowerCase().trim() === `[Black "${username}"]`.toLowerCase().trim()){
-                    color = "black";
-                    break;
-                }
-            }
             
             let winner = "draw";
             if (pgnGame.slice(pgnGame.length - "1-0".length, pgnGame.length) === "1-0"){
@@ -521,15 +481,7 @@ const startGame = (username) => {
 
         if (color === "black") playForward();
 
-        // for (let i = 0; i < 100; i++) playForward();
-
-        const nextCorrectMove = moves[movesStack.length];
-        if (nextCorrectMove){
-            cg.setAutoShapes([{
-                orig: nextCorrectMove['from'],
-                brush: 'green'
-            }]);
-        }
+        for (let i = 0; i < loadedMoves.length - 1; i++) playForward();
     });
 };
 
