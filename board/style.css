@@ -39,7 +39,7 @@ html,body{
 }
 
 .cg-wrap coords.ranks, .cg-wrap coords.files{
-    font-size: 12px;
+    font-size: 14px;
 }
 
 .flash{
@@ -80,6 +80,10 @@ body.hide-pieces piece.king,
 body.hide-pieces piece.rook
 {
     opacity: 0;
+}
+
+.opaque{
+    opacity: 0.0;
 }
 
 @keyframes fadeSlide {

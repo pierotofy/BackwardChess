@@ -131,31 +131,9 @@ const handleBoardClick = (e) => {
 };
 
 const afterPlayerMove = (orig, dest) => {
-    const playerMove = `${orig}${dest}`;
-    const currentMove = movesStack.length;
-
-    const correctMove = moves[movesStack.length - 1];
-    if (!correctMove){
+    // Play opponent's next move
+    if (!playBack() || !playBack()){
         gameOver();
-        return;
-    }
-    const shapes = [];
-
-    if (playerMove === `${correctMove['from']}${correctMove['to']}`){
-        shapes.push({
-            orig,
-            dest,
-            brush: 'green'
-        });
-
-        if (score[currentMove] === undefined) score[currentMove] = 1;
-
-        // Play opponent's next move
-        if (!playBack() || !playBack()){
-            gameOver();
-        }else if (moves.length === 0){
-            gameOver();
-        }
     }
 
     updateCg();
@@ -342,14 +320,13 @@ const manualPlayForward = () => {
 
 const playBack = () => {
     if (movesStack.length <= 0) return;
-    if (movesStack.length <= 1 && color === "black") return;
 
     const [dest, orig] = movesStack.pop();
     playMove(orig, dest, true);
 
     updateState();
 
-    return true;
+    return movesStack.length > 0;
 }
 
 const manualPlayBack = () => {
@@ -378,28 +355,7 @@ const rewind = () => {
     });
 }
 
-const calculateScoreStats = () => {
-    let correct = 0;
-    let wrong = 0;
-    const keys = Object.keys(score);
-    for (let i of keys){
-        if (score[i] === 1) correct++;
-        else if (score[i] === -1) wrong++;
-    }
-
-    let scores = JSON.parse(localStorage.getItem(`scores_${username}`) || "{}");
-    scores[gameId] = {
-        correct,
-        wrong,
-        date: new Date().toISOString()
-    };
-
-    localStorage.setItem(`scores_${username}`, JSON.stringify(scores));
-};
-
 const gameOver = () => {
-    calculateScoreStats();
-
     confetti({
         particleCount: 100,
         spread: 60,
@@ -407,22 +363,6 @@ const gameOver = () => {
         origin: { y: 0.7 }
     });
 }
-
-const downloadScores = () => {
-    const scores = JSON.parse(localStorage.getItem(`scores_${username}`) || "{}");
-    const header = `Date,GameID,Correct Moves,Wrong Moves,Total Moves,Correct %\n`;
-    const lines = Object.keys(scores).map(k => {
-        const { correct, wrong } = scores[k];
-        const total = correct + wrong;
-        return `${scores[k].date},${k},${correct},${wrong},${total},${(correct / total * 100).toFixed(2)}\n`;
-    });
-    let blob = new Blob([`${header}${lines}`], {type: "text/plain"});
-    let url = window.URL.createObjectURL(blob);
-    let a = document.createElement("a");
-    a.href = url;
-    a.download = `scores_${username}.csv`;
-    a.click();
-};
 
 let touchMoved = false;
 
@@ -482,6 +422,27 @@ const startGame = (username) => {
         if (color === "black") playForward();
 
         for (let i = 0; i < loadedMoves.length - 1; i++) playForward();
+
+        
+        // Mark all squares that have been moved
+        const movedSquares = {};
+        movesStack.forEach(([from, to]) => {
+            movedSquares[from] = true;
+            movedSquares[to] = true;
+        });
+
+        let el = domBoard.getElementsByTagName("cg-board")[0].firstElementChild;
+        while(el){
+            if (el.tagName === "PIECE" ){
+                const k = el.cgKey;
+                if (!movedSquares[k]) el.classList.add("opaque");
+            }
+
+            el = el.nextElementSibling;
+        }
+
+        // Set board color
+        domBoard.getElementsByTagName("cg-board")[0].style.backgroundImage = generateChessboardSVG(movedSquares);
     });
 };
 
@@ -492,6 +453,53 @@ const togglePieces = () => {
     document.body.classList.toggle("hide-pieces");
 };
 
+const generateChessboardSVG = (showSquares) => {
+    const size = 150;
+    const squareSize = size / 8;
+
+    let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">`;
+    const seed = Object.keys(showSquares).reduce((acc, sq) => acc + sq.charCodeAt(0) + sq.charCodeAt(1), 0);
+    const randomBlack = `hsl(${(seed * 137) % 360}, 27.2%, 53.14%)`;
+    const randomWhite = `hsl(${(seed * 137) % 360}, 51.06%, 81.57%)`;
+    
+    // const randomBlackHide = `hsla(${(seed * 137) % 360}, 27.2%, 53.14%, 25%)`;
+    // const randomWhiteHide = `hsla(${(seed * 137) % 360}, 51.06%, 81.57%, 25%)`;
+    
+    const showRank = {};
+    const showFile = {};
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+            const file = String.fromCharCode(97 + col); // 'a' to 'h'
+            const rank = 8 - row; // '8' to '1'
+            const square = `${file}${rank}`;
+            if (showSquares[square]){
+                showFile[file] = true;
+                showRank[rank] = true;
+            }
+        }
+    }
+
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+            const isWhite = (row + col) % 2 === 0;
+            const file = String.fromCharCode(97 + col); // 'a' to 'h'
+            const rank = 8 - row; // '8' to '1'
+            let color = "";
+            if (showRank[rank] && showFile[file]){
+                color = isWhite ? randomWhite : randomBlack;
+            }else{
+                // color = isWhite ? randomWhiteHide : randomBlackHide;
+                color = "black";
+            }
+
+            svgContent += `<rect x="${col * squareSize}" y="${row * squareSize}" width="${squareSize}" height="${squareSize}" fill="${color}" />`;
+        }
+    }
+
+    svgContent += `</svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svgContent)}")`;
+}
+
 updateSize();
 window.addEventListener('resize', updateSize);
 setInterval(updateSize, 200);
@@ -501,7 +509,6 @@ document.addEventListener('playBack', manualPlayBack);
 document.addEventListener('rewind', rewind);
 document.addEventListener('togglePawns', togglePawns);
 document.addEventListener('togglePieces', togglePieces);
-document.addEventListener('downloadScores', downloadScores);
 
 window.addEventListener('keydown', (e) => {
     if (e.keyCode === 37){
