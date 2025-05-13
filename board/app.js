@@ -419,16 +419,19 @@ const startGame = (username) => {
         // console.log("Outcome: " + winner);
         updateCg();
 
-        if (color === "black") playForward();
-
-        for (let i = 0; i < loadedMoves.length - 1; i++) playForward();
-
-        
         // Mark all squares that have been moved
         const movedSquares = {};
-        movesStack.forEach(([from, to]) => {
+        loadedMoves.forEach(({from, to}) => {
             movedSquares[from] = true;
-            movedSquares[to] = true;
+            
+            // Castling
+            if (from === "e1"){
+                if (to === "g1") movedSquares["h1"] = true;
+                else if (to === "c1") movedSquares["a1"] = true;
+            }else if (from === "e8"){
+                if (to === "g8") movedSquares["h8"] = true;
+                else if (to === "c8") movedSquares["a8"] = true;
+            }
         });
 
         let el = domBoard.getElementsByTagName("cg-board")[0].firstElementChild;
@@ -440,6 +443,14 @@ const startGame = (username) => {
 
             el = el.nextElementSibling;
         }
+
+
+        if (color === "black") playForward();
+
+        for (let i = 0; i < loadedMoves.length - 1; i++) playForward();
+
+        
+
 
         // Set board color
         domBoard.getElementsByTagName("cg-board")[0].style.backgroundImage = generateChessboardSVG(movedSquares);
