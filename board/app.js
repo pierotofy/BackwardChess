@@ -7,8 +7,8 @@ function parseQueryParams(){
     return JSON.parse('{"' + decodeURI(search).replace(/"/g, '\\"').replace(/&/g, '","').replace(/=/g,'":"') + '"}');
 }
 
-let { username, gameId, color } = parseQueryParams();
-if (!username) username = "Sicilian-Najdorf";
+let { opening, gameId, color } = parseQueryParams();
+if (!opening) opening = "caro-kann";
 if (!color) color = "white";
 if (!gameId) gameId = 0;
 
@@ -362,6 +362,7 @@ const gameOver = () => {
         ticks: 100,
         origin: { y: 0.7 }
     });
+    nextGame();
 }
 
 let touchMoved = false;
@@ -384,39 +385,65 @@ if (('ontouchstart' in window) ||
 }else{
     window.addEventListener('click', handleBoardClick);
 }
+const loadMoves = (opening, cb) => {
+        fetch(`/gen/${opening}.json`)
+            .then(response => response.json())
+            .then((json) => {
+                const g = new Chess();
+                if (json.length <= gameId) gameId = 0;
 
-const loadPgn = (username, cb) => {
-    fetch(`/gen/${username}.pgn.txt`)
-        .then(response => response.text())
-        .then((pgn) => {
-            const pgnGames = pgn.trim().split("\n\n[Event");
-            let pgnGame = pgnGames[gameId];
-            if (pgnGame.indexOf("[Event") !== 0) pgnGame = "[Event" + pgnGame;
+                
+                const game = json[gameId];
+                game.moves.forEach(m => {
+                    const [from, to] = [m.slice(0, 2), m.slice(2)];
+                    g.move({from, to, promotion: 'q'})
+                });
+                
+                const moves = g.history({verbose: true});
+                
+                document.getElementById("opening-name").innerText = (game.name || "") + ` (${parseInt(gameId) + 1} out of ${json.length})`;
+                cb(moves);
+            });
+    };
 
-            const g = new Chess();
-            if (!g.load_pgn(pgnGame)) throw new Error(`Invalid PGN: ${pgnGames}`);
-            const moves = g.history({verbose: true});
+const nextGame = () => {
+    setTimeout(() => {
+        location.href = `/?color=${color}&gameId=${parseInt(gameId) + 1}&opening=${opening}`;
+    }, 1000);
+}
 
-            // Parse color
-            window.pgnGame = pgnGame;
+// const loadPgn = (username, cb) => {
+//     fetch(`/gen/${username}.pgn.txt`)
+//         .then(response => response.text())
+//         .then((pgn) => {
+//             const pgnGames = pgn.trim().split("\n\n[Event");
+//             let pgnGame = pgnGames[gameId];
+//             if (pgnGame.indexOf("[Event") !== 0) pgnGame = "[Event" + pgnGame;
+
+//             const g = new Chess();
+//             if (!g.load_pgn(pgnGame)) throw new Error(`Invalid PGN: ${pgnGames}`);
+//             const moves = g.history({verbose: true});
+
+//             // Parse color
+//             window.pgnGame = pgnGame;
             
-            let winner = "draw";
-            if (pgnGame.slice(pgnGame.length - "1-0".length, pgnGame.length) === "1-0"){
-                winner = "white";
-            }else if (pgnGame.slice(pgnGame.length - "0-1".length, pgnGame.length) === "0-1"){
-                winner = "black";
-            }
+//             let winner = "draw";
+//             if (pgnGame.slice(pgnGame.length - "1-0".length, pgnGame.length) === "1-0"){
+//                 winner = "white";
+//             }else if (pgnGame.slice(pgnGame.length - "0-1".length, pgnGame.length) === "0-1"){
+//                 winner = "black";
+//             }
 
-            cb(moves, color, winner);
-        });
-};
+//             cb(moves, color, winner);
+//         });
+// };
 
-const startGame = (username) => {
-    loadPgn(username, (loadedMoves, playerColor, winner) => {
+const startGame = (opening) => {
+    loadMoves(opening, (loadedMoves) => {
         moves = loadedMoves;
-        color = playerColor;
         score = {};
         // console.log("Outcome: " + winner);
+
         updateCg();
 
         // Mark all squares that have been moved
@@ -444,16 +471,15 @@ const startGame = (username) => {
             el = el.nextElementSibling;
         }
 
+        let offset = 0;
+        if (color === "white" && loadedMoves.length % 2 === 0) offset += 1;
+        if (color === "black" && loadedMoves.length % 2 === 1) offset += 1;
 
-        if (color === "black") playForward();
-
-        for (let i = 0; i < loadedMoves.length - 1; i++) playForward();
-
-        
-
-
+        for (let i = 0; i < loadedMoves.length - offset; i++) playForward();
+        console.log(loadedMoves, color)
         // Set board color
         domBoard.getElementsByTagName("cg-board")[0].style.backgroundImage = generateChessboardSVG(movedSquares);
+    
     });
 };
 
@@ -473,35 +499,10 @@ const generateChessboardSVG = (showSquares) => {
     const randomBlack = `hsl(${(seed * 137) % 360}, 27.2%, 53.14%)`;
     const randomWhite = `hsl(${(seed * 137) % 360}, 51.06%, 81.57%)`;
     
-    // const randomBlackHide = `hsla(${(seed * 137) % 360}, 27.2%, 53.14%, 25%)`;
-    // const randomWhiteHide = `hsla(${(seed * 137) % 360}, 51.06%, 81.57%, 25%)`;
-    
-    const showRank = {};
-    const showFile = {};
-    for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
-            const file = String.fromCharCode(97 + col); // 'a' to 'h'
-            const rank = 8 - row; // '8' to '1'
-            const square = `${file}${rank}`;
-            if (showSquares[square]){
-                showFile[file] = true;
-                showRank[rank] = true;
-            }
-        }
-    }
-
     for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
             const isWhite = (row + col) % 2 === 0;
-            const file = String.fromCharCode(97 + col); // 'a' to 'h'
-            const rank = 8 - row; // '8' to '1'
-            let color = "";
-            if (showRank[rank] && showFile[file]){
-                color = isWhite ? randomWhite : randomBlack;
-            }else{
-                // color = isWhite ? randomWhiteHide : randomBlackHide;
-                color = "black";
-            }
+            const color = isWhite ? randomWhite : randomBlack;
 
             svgContent += `<rect x="${col * squareSize}" y="${row * squareSize}" width="${squareSize}" height="${squareSize}" fill="${color}" />`;
         }
@@ -543,6 +544,6 @@ if (/192\.168\.\d+\.\d+/.test(window.location.hostname) ||
 
 // ==== END INIT ====
 
-startGame(username);
+startGame(opening);
 
 }

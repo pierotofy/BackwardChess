@@ -20,8 +20,6 @@
 <body onload="main()">
     <div id="chessboard"></div>
     <div id="debug">
-        Debug
-
         <button onclick="document.dispatchEvent(new Event('rewind'))">Rewind</button>
         <button onclick="document.dispatchEvent(new Event('playForward'))">Forward</button>
         <button onclick="document.dispatchEvent(new Event('playBack'))">Back</button>
@@ -29,6 +27,8 @@
         <button onclick="document.dispatchEvent(new Event('togglePieces'))">Toggle Pieces</button>
         <button onclick="document.dispatchEvent(new Event('downloadScores'))">Download Scores</button>
         
+        <br/>
+        <span id="opening-name">Opening Name</span>
         
     </div>
 </body>

@@ -83,7 +83,7 @@ body.hide-pieces piece.rook
 }
 
 .opaque{
-    opacity: 0.0;
+    opacity: 0;
 }
 
 @keyframes fadeSlide {
